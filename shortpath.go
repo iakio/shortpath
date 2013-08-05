@@ -8,8 +8,8 @@ import (
 )
 
 var (
-	kernel32, _         = syscall.LoadLibrary("kernel32.dll")
-	getShortPathName, _ = syscall.GetProcAddress(kernel32, "GetShortPathNameW")
+	kernel32         = syscall.MustLoadDLL("kernel32.dll")
+	getShortPathName = kernel32.MustFindProc("GetShortPathNameW")
 )
 
 func abort(funcname string, err error) {
@@ -17,33 +17,35 @@ func abort(funcname string, err error) {
 }
 
 func GetShortPathName(longpath string) string {
+	var (
+		bufferLen, ret uintptr
+		lastErr        error
+	)
 
-	ret, _, callErr := syscall.Syscall(uintptr(getShortPathName),
-		3,
+	bufferLen, _, lastErr = getShortPathName.Call(
 		uintptr(unsafe.Pointer(syscall.StringToUTF16Ptr(longpath))),
 		0,
 		0)
 
-	if callErr != 0 {
-		abort("GetShortPathName", callErr)
+	if bufferLen == 0 {
+		abort("GetShortPathName", lastErr)
 	}
-	shortpath := make([]uint16, ret)
+	shortpath := make([]uint16, bufferLen)
 
-	ret, _, callErr = syscall.Syscall(uintptr(getShortPathName),
-		3,
+	ret, _, lastErr = getShortPathName.Call(
 		uintptr(unsafe.Pointer(syscall.StringToUTF16Ptr(longpath))),
 		uintptr(unsafe.Pointer(&shortpath[0])),
-		ret)
+		bufferLen)
 
-	if callErr != 0 {
-		abort("GetShortPathName", callErr)
+	if ret == 0 {
+		abort("GetShortPathName", lastErr)
 	}
 
 	return syscall.UTF16ToString(shortpath)
 }
 
 func main() {
-	defer syscall.FreeLibrary(kernel32)
+	defer kernel32.Release()
 
 	flag.Parse()
 	for _, longPath := range flag.Args() {
